@@ -1,0 +1,134 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: HTTP API Gateway with X-Customer-ID header routing
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+  JwtSecret:
+    Type: String
+    Default: your-jwt-secret-change-me
+    NoEcho: true
+
+Globals:
+  Function:
+    Architectures:
+      - arm64
+
+Resources:
+  # Lambda Authorizer - Extracts customer ID from JWT token
+  AuthorizerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-authorizer
+      CodeUri: src/authorizer/
+      Handler: handler.lambda_handler
+      Runtime: python3.13
+      Timeout: 30
+      MemorySize: 256
+      Environment:
+        Variables:
+          JWT_SECRET: !Ref JwtSecret
+
+  AuthorizerFunctionPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref AuthorizerFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*
+
+  # Backend Lambda - Simulates your upstream service
+  BackendFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-backend
+      CodeUri: src/backend/
+      Handler: handler.lambda_handler
+      Runtime: python3.13
+      Timeout: 30
+      MemorySize: 256
+
+  BackendFunctionPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref BackendFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*
+
+  # HTTP API Gateway
+  HttpApi:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: !Sub ${AWS::StackName}-api
+      ProtocolType: HTTP
+      Description: API with X-Customer-ID header routing
+
+  # Lambda Authorizer Configuration
+  HttpApiAuthorizer:
+    Type: AWS::ApiGatewayV2::Authorizer
+    Properties:
+      ApiId: !Ref HttpApi
+      AuthorizerType: REQUEST
+      AuthorizerUri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${AuthorizerFunction.Arn}/invocations
+      AuthorizerPayloadFormatVersion: "2.0"
+      EnableSimpleResponses: true
+      IdentitySource:
+        - $request.header.Authorization
+      Name: JwtAuthorizer
+
+  # Integration with Backend Lambda
+  HttpApiIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref HttpApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !GetAtt BackendFunction.Arn
+      PayloadFormatVersion: "2.0"
+      # Map authorizer context to X-Customer-ID header
+      RequestParameters:
+        append:header.X-Customer-ID: $context.authorizer.customerId
+        append:header.X-Customer-Name: $context.authorizer.customerName
+
+  # Route - All requests go through authorizer
+  HttpApiRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: $default
+      AuthorizationType: CUSTOM
+      AuthorizerId: !Ref HttpApiAuthorizer
+      Target: !Sub integrations/${HttpApiIntegration}
+
+  # Stage
+  HttpApiStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId: !Ref HttpApi
+      StageName: !Ref Environment
+      AutoDeploy: true
+      AccessLogSettings:
+        DestinationArn: !GetAtt ApiAccessLogs.Arn
+        Format: '{"requestId":"$context.requestId","ip":"$context.identity.sourceIp","requestTime":"$context.requestTime","httpMethod":"$context.httpMethod","routeKey":"$context.routeKey","status":"$context.status","customerId":"$context.authorizer.customerId"}'
+
+  # CloudWatch Log Group for API Access Logs
+  ApiAccessLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/apigateway/${AWS::StackName}
+      RetentionInDays: 7
+
+Outputs:
+  ApiEndpoint:
+    Description: HTTP API endpoint URL
+    Value: !Sub https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com/${Environment}
+  
+  AuthorizerFunctionArn:
+    Description: Authorizer Lambda ARN
+    Value: !GetAtt AuthorizerFunction.Arn
+  
+  BackendFunctionArn:
+    Description: Backend Lambda ARN
+    Value: !GetAtt BackendFunction.Arn

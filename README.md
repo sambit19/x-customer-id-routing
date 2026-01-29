@@ -4,23 +4,7 @@ This example demonstrates how to dynamically set the `X-Customer-ID` header in H
 
 ## Architecture
 
-```
-┌─────────┐     ┌─────────────────┐     ┌──────────────────┐     ┌─────────────┐
-│  Client │────▶│  HTTP API GW    │────▶│  Backend Lambda  │────▶│  Response   │
-│  (JWT)  │     │  + Authorizer   │     │  (simulates K8s) │     │             │
-└─────────┘     └─────────────────┘     └──────────────────┘     └─────────────┘
-                       │
-                       │ Sets X-Customer-ID header
-                       │ from authorizer context
-                       ▼
-              ┌─────────────────┐
-              │ Lambda          │
-              │ Authorizer      │
-              │ (extracts       │
-              │  customer_id    │
-              │  from JWT)      │
-              └─────────────────┘
-```
+![X-Customer-ID Header Routing Architecture](generated-diagrams/x-customer-id-architecture-eks.png)
 
 ## Prerequisites
 

@@ -1,0 +1,3 @@
+# No external dependencies for basic JWT handling
+# For production, uncomment:
+# PyJWT>=2.8.0

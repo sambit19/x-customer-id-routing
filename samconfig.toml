@@ -1,0 +1,20 @@
+# SAM CLI configuration file
+
+version = 0.1
+
+[default.deploy.parameters]
+stack_name = "x-customer-id-routing"
+resolve_s3 = true
+s3_prefix = "x-customer-id-routing"
+region = "us-east-1"
+confirm_changeset = true
+capabilities = "CAPABILITY_IAM"
+# profile = "your-aws-profile"  # Uncomment and set your AWS profile
+parameter_overrides = "Environment=\"dev\""
+image_repositories = []
+
+[default.build.parameters]
+use_container = false
+
+[default.global.parameters]
+region = "us-east-1"
