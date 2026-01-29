@@ -6,8 +6,6 @@ This example demonstrates how to dynamically set the `X-Customer-ID` header in H
 
 ![X-Customer-ID Header Routing Architecture](generated-diagrams/x-customer-id-architecture-eks.png)
 
-*Dark theme version: [x-customer-id-architecture-dark.png](generated-diagrams/x-customer-id-architecture-dark.png)*
-
 ## Prerequisites
 
 - AWS CLI configured with appropriate credentials

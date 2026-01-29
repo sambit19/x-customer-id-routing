@@ -25,8 +25,6 @@ The solution: Use a Lambda authorizer to extract customer identity from the toke
 
 ![Architecture Diagram](generated-diagrams/x-customer-id-architecture-eks.png)
 
-*Dark theme version: [x-customer-id-architecture-dark.png](generated-diagrams/x-customer-id-architecture-dark.png)*
-
 The request flow:
 
 1. Client sends a request with a JWT token in the Authorization header
