@@ -247,4 +247,13 @@ RequestParameters:
 ### Integration timeout
 - Increase Lambda timeout in template.yaml
 - Check VPC configuration if using Private Link
-# x-customer-id-routing
+
+---
+
+## Disclaimer
+
+This project is provided as an example implementation only. Neither the author nor their employer is liable for any issues arising from its use. No technical support is provided or guaranteed. 
+
+This example demonstrates a specific use case of AWS features. Any feature requests or bug reports related to AWS services should be submitted through the appropriate AWS support channels.
+
+Use at your own risk.
