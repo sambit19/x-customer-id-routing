@@ -375,6 +375,48 @@ This pattern is ideal when:
 - **Shared API Gateway** - One API Gateway serves all customers, backend handles routing
 - **Self-service onboarding** - New customers can be added without API Gateway redeployment
 
+## Performance Considerations
+
+Lambda authorizers add latency to each request. Here's how to minimize the impact:
+
+**Cold Starts**
+
+The first invocation after an idle period adds 100-500ms (Python). Mitigation strategies:
+- Enable provisioned concurrency on the authorizer Lambda (eliminates cold starts, adds cost)
+- Use lightweight runtimes—Python and Node.js have faster cold starts than Java
+- Keep the Lambda package small—avoid unnecessary dependencies
+
+**Warm Execution**
+
+A warm Lambda typically adds 5-20ms for simple JWT decode and validation.
+
+**Authorizer Caching**
+
+HTTP API Gateway can cache authorizer responses, skipping the Lambda for repeated requests with the same token:
+
+```yaml
+HttpApiAuthorizer:
+  Type: AWS::ApiGatewayV2::Authorizer
+  Properties:
+    ApiId: !Ref HttpApi
+    AuthorizerType: REQUEST
+    AuthorizerResultTtlInSeconds: 300  # Cache for 5 minutes
+    # ... other properties
+```
+
+With caching enabled, only the first request per token invokes the Lambda. Subsequent requests within the TTL use the cached response.
+
+**Latency Comparison**
+
+| Approach | Latency | Trade-off |
+|----------|---------|-----------|
+| Lambda Authorizer (no cache) | 5-20ms warm, 100-500ms cold | Most flexible |
+| Lambda Authorizer (cached) | ~0ms after first call | Best balance |
+| JWT Authorizer (built-in) | ~1ms | Can't extract custom claims to headers |
+| Per-customer routes | ~0ms | Operational overhead at scale |
+
+**Recommendation**: Enable caching with a TTL that matches your token expiry (e.g., 300 seconds). For high-traffic APIs with strict latency requirements, add provisioned concurrency to the authorizer Lambda.
+
 ## Security Considerations
 
 1. **Strip incoming X-Customer-ID headers** - Malicious clients could send their own header. Use a WAF rule or Lambda@Edge to strip any incoming X-Customer-ID headers before they reach API Gateway.
