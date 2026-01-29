@@ -1,22 +1,25 @@
-# Pass Customer Identity from JWT to Backend Services Using HTTP API Gateway
+# Dynamic Customer Routing Without Per-Customer API Mappings
 
 ## Overview
 
-Enterprise applications often need to pass customer identity information from an authenticated request to backend services. While the JWT token contains this information, backend services shouldn't need to parse and validate JWTs themselves - they should receive the customer identity as a simple header.
+Single-tenant SaaS deployments often result in separate customer installations, each requiring its own backend endpoint. The traditional approach—creating individual API Gateway routes or stage mappings for each customer—becomes an operational burden as your customer base grows.
 
-This article shows you how to use Amazon API Gateway HTTP APIs with a Lambda authorizer to extract customer information from JWT tokens and pass it as a custom header (`X-Customer-ID`) to your backend services. This enables clean separation between authentication at the API Gateway layer and identity consumption at the backend.
+This article shows you how to use Amazon API Gateway HTTP APIs with a Lambda authorizer to dynamically identify the customer at runtime and pass that identity as a header to your backend. This eliminates the need to maintain per-customer API configurations while enabling your backend or ingress to route requests appropriately.
 
 ## Problem Statement
 
-Consider a typical enterprise architecture where:
+In single-tenant architectures where each customer has their own installation:
 
-1. **Clients authenticate with JWT tokens** - containing customer/user identity claims
-2. **Backend services need customer context** - to apply business logic, logging, or audit trails
-3. **Backend shouldn't parse JWTs** - separation of concerns means the backend trusts the API Gateway to handle authentication
+1. **Each customer needs routing to their specific backend** - but you don't want N API Gateway configurations for N customers
+2. **Customer identity is in the JWT token** - but API Gateway doesn't natively extract claims and forward them
+3. **Adding new customers shouldn't require API Gateway changes** - onboarding should be a backend/infrastructure concern, not an API Gateway deployment
 
-The challenge: HTTP API Gateway doesn't automatically extract JWT claims and forward them as headers. You need a mechanism to:
-- Extract the `customer_id` (or similar claim) from the JWT
-- Pass it to the backend as a header the service can easily consume
+The traditional approach requires:
+- Creating new routes or stage variables for each customer
+- Redeploying API Gateway when customers are added or removed
+- Managing a growing list of customer-specific configurations
+
+The solution: Use a Lambda authorizer to extract customer identity from the token at runtime and pass it as an `X-Customer-ID` header. Your backend or ingress controller handles the actual routing—API Gateway configuration stays static regardless of customer count.
 
 ## Architecture
 
@@ -364,13 +367,13 @@ curl -H "Authorization: Bearer $TOKEN" \
 
 ## Use Cases
 
-This pattern is useful when your backend needs customer identity for:
+This pattern is ideal when:
 
-- **Audit logging** - Record which customer made each request
-- **Business logic** - Apply customer-specific rules or configurations
-- **Downstream API calls** - Pass customer context to other internal services
-- **Data filtering** - Scope database queries to the customer's data
-- **Rate limiting** - Apply per-customer rate limits at the backend
+- **Single-tenant deployments** - Each customer has their own backend installation
+- **Growing customer base** - You don't want API Gateway changes for each new customer
+- **Kubernetes-based backends** - Ingress can route based on X-Customer-ID to different namespaces
+- **Shared API Gateway** - One API Gateway serves all customers, backend handles routing
+- **Self-service onboarding** - New customers can be added without API Gateway redeployment
 
 ## Security Considerations
 
@@ -399,13 +402,13 @@ sam delete --stack-name x-customer-id-routing
 
 ## Conclusion
 
-This pattern provides clean separation of concerns:
+This pattern decouples customer onboarding from API Gateway configuration:
 
-- **API Gateway** handles JWT validation and extracts customer identity
-- **Backend services** receive customer identity as a simple header
-- **No JWT parsing in backend** - the backend trusts the API Gateway layer
+- **API Gateway stays static** - No changes needed when adding or removing customers
+- **Customer identity extracted at runtime** - Lambda authorizer reads the token once per request
+- **Backend handles routing** - Ingress or application routes based on X-Customer-ID header
 
-The `X-Customer-ID` header approach keeps your backend code simple while ensuring customer context flows through your entire request chain.
+Scale your customer base without scaling your API Gateway configurations.
 
 ## Source Code
 
