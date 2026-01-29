@@ -248,6 +248,115 @@ RequestParameters:
 - Increase Lambda timeout in template.yaml
 - Check VPC configuration if using Private Link
 
+## FAQ
+
+### Why are there two Lambda functions?
+
+The two Lambdas serve different purposes:
+
+**Lambda Authorizer:**
+- Validates the JWT token
+- Extracts `customer_id` from the token
+- Returns the customer ID in the authorizer context
+- API Gateway uses this to add the `X-Customer-ID` header
+
+**Backend Lambda:**
+- Simulates your actual backend service
+- Receives the request with the `X-Customer-ID` header already set
+- Demonstrates that the header routing works
+
+**In production, you'd only need the Authorizer Lambda.** The Backend Lambda would be replaced by a VPC Link to your Private Link endpoint connecting to EKS Ingress.
+
+| Lambda | Purpose | Production? |
+|--------|---------|-------------|
+| Authorizer | Extract customer from JWT | ✅ Keep |
+| Backend | Demo/test the header flow | ❌ Replace with VPC Link to EKS |
+
+### How does the X-Customer-ID header reach the backend through Private Link?
+
+The X-Customer-ID header flows through the Private Link endpoint automatically - it's just HTTP traffic passing through.
+
+**How it works:**
+
+```
+API Gateway → VPC Link → NLB → Private Link → Your Service
+     ↓
+  Adds X-Customer-ID header to the HTTP request
+     ↓
+  The header travels with the request through the entire chain
+```
+
+Private Link doesn't inspect or modify headers - it's a network tunnel. The HTTP request (including all headers) passes through unchanged.
+
+**To set this up in production:**
+
+1. Replace Lambda integration with HTTP_PROXY integration:
+
+```yaml
+HttpApiIntegration:
+  Type: AWS::ApiGatewayV2::Integration
+  Properties:
+    ApiId: !Ref HttpApi
+    IntegrationType: HTTP_PROXY
+    IntegrationUri: !Ref VpcLinkEndpoint  # Your NLB/ALB endpoint
+    IntegrationMethod: ANY
+    ConnectionType: VPC_LINK
+    ConnectionId: !Ref VpcLink
+    RequestParameters:
+      append:header.X-Customer-ID: $context.authorizer.customerId
+```
+
+2. Create VPC Link:
+
+```yaml
+VpcLink:
+  Type: AWS::ApiGatewayV2::VpcLink
+  Properties:
+    Name: eks-vpc-link
+    SubnetIds:
+      - !Ref PrivateSubnet1
+      - !Ref PrivateSubnet2
+    SecurityGroupIds:
+      - !Ref VpcLinkSecurityGroup
+```
+
+3. Your EKS ingress receives the header and routes based on X-Customer-ID.
+
+**Key point:** API Gateway adds the header *before* sending the request through the VPC Link. The header is part of the HTTP request payload, not network metadata, so it survives the entire journey.
+
+### Why X-Customer-ID instead of Host header?
+
+The original problem was: "HTTP API Gateway doesn't generate upstream Host header based on the incoming token."
+
+**Why we use X-Customer-ID instead:**
+
+| Header | Can API Gateway Set It? | Notes |
+|--------|------------------------|-------|
+| `Host` | ❌ No | HTTP API Gateway cannot modify the Host header - it's set automatically based on the integration endpoint |
+| `X-Customer-ID` | ✅ Yes | Custom headers can be set from authorizer context using `RequestParameters` |
+
+**The Host header limitation:**
+- HTTP API Gateway sets the Host header automatically to match the integration target (e.g., your NLB DNS name)
+- You cannot dynamically change the Host header based on JWT claims
+- This is a fundamental HTTP API Gateway limitation
+
+**The X-Customer-ID solution:**
+- Create a custom header (`X-Customer-ID`) that carries the customer identifier
+- API Gateway CAN set custom headers from authorizer context
+- Your ingress controller routes based on this custom header instead of Host
+
+**If you absolutely need Host-based routing:**
+You'd need a Lambda proxy between API Gateway and your backend:
+
+```
+API Gateway → Lambda Proxy → Your Backend
+                  ↓
+           Modifies Host header
+           based on X-Customer-ID
+```
+
+But this adds latency and complexity. The recommended approach is to configure your ingress to route on `X-Customer-ID` header instead.
+
 ---
 
 ## Disclaimer
